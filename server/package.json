@@ -1,0 +1,22 @@
+{
+  "name": "ai-chat-server",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@langchain/community": "^0.3.59",
+    "@langchain/core": "^0.3.80",
+    "@langchain/deepseek": "^0.1.0",
+    "axios": "^1.16.1",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.2",
+    "jsonwebtoken": "^9.0.3",
+    "langchain": "^0.3.37",
+    "openai": "^4.47.1",
+    "pg": "^8.21.0",
+    "ws": "^8.21.0"
+  }
+}

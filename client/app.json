@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "AI聊天助手",
+    "slug": "ai-chat-client",
+    "version": "1.0.0",
+    "ios": {
+      "bundleIdentifier": "com.example.aichat"
+    },
+    "android": {
+      "package": "com.example.aichat"
+    }
+  }
+}
