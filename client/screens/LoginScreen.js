@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
-  ActivityIndicator, Modal
+  ActivityIndicator, Modal, StatusBar
 } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
+import TransitionScreen from './TransitionScreen';
 
 const API_URL = 'http://192.168.43.231:5000';
 
@@ -14,6 +15,8 @@ const LoginScreen = ({ navigation, route }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showTransition, setShowTransition] = useState(false);
+  const [pendingAuthData, setPendingAuthData] = useState(null);
   const [isLogin, setIsLogin] = useState(true);
   const [msgModalVisible, setMsgModalVisible] = useState(false);
   const [msgTitle, setMsgTitle] = useState('');
@@ -47,7 +50,8 @@ const LoginScreen = ({ navigation, route }) => {
 
       const data = await response.json();
       if (data.success) {
-        await authLogin(data.data);
+        setPendingAuthData(data.data);
+        setShowTransition(true);
       } else {
         showMessage('登录失败', data.message || '用户名或密码错误');
       }
@@ -100,6 +104,18 @@ const LoginScreen = ({ navigation, route }) => {
     setPassword('');
   };
 
+  if (showTransition) {
+    return (
+      <TransitionScreen onDone={() => {
+        if (pendingAuthData) {
+          authLogin(pendingAuthData);
+          setPendingAuthData(null);
+        }
+        setShowTransition(false);
+      }} />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -113,6 +129,7 @@ const LoginScreen = ({ navigation, route }) => {
               </View>
               <View style={styles.loginLogo}>
                 <Text style={styles.logoIcon}>💬</Text>
+                <Text style={styles.logoIcon}>💕</Text>
                 <Text style={styles.logoTitle}>MeetU</Text>
                 <Text style={styles.logoSubtitle}>瞬间相遇，记录社交瞬间</Text>
               </View>
@@ -186,6 +203,8 @@ const LoginScreen = ({ navigation, route }) => {
               <View style={styles.registerLogo}>
                 <Text style={styles.registerLogoIcon}>✨</Text>
                 <Text style={styles.registerLogoTitle}>加入 MeetU</Text>
+                <Text style={styles.registerLogoIcon}>💕</Text>
+                <Text style={styles.registerLogoTitle}>MeetU</Text>
                 <Text style={styles.registerLogoSubtitle}>瞬间相遇，记录社交瞬间</Text>
               </View>
             </View>
