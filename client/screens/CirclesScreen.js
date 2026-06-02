@@ -1,15 +1,72 @@
 // ============================================================
-// 【重写】圈子页 — 双标签切换 + 动态列表 + 发布动态（全局主题 + i18n）
+// 圈子页 — 双标签切换 + 高德地图 + 动态列表 + 发布动态
 // ============================================================
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
-  SafeAreaView, StatusBar, Modal, TextInput, KeyboardAvoidingView,
-  Platform, Image, ScrollView, Alert
+  SafeAreaView, StatusBar, Modal, TextInput,
+  Platform, Image, ScrollView, Alert, ActivityIndicator
 } from 'react-native';
+import { WebView } from 'react-native-webview';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../ThemeContext';
 import { useTranslation } from 'react-i18next';
+
+// ============================================================
+// 高德地图 Key 配置
+// 免费申请: https://lbs.amap.com/
+// 步骤: 注册账号 → 控制台 → 我的应用 → 创建新应用 → 添加 Key → 平台选"Web端(JS API)"
+// 将申请到的 Key 和安全密钥填入下方即可
+// ============================================================
+const AMAP_KEY = 'b1ae8f02fa690ef9316115f6d1a70d18';
+const AMAP_SECRET = '2f6a062e7a092d821911e9297c834aa7';
+
+// 判断 Key 是否已配置
+const isKeyConfigured = AMAP_KEY !== 'YOUR_AMAP_KEY' && AMAP_KEY.length > 0;
+
+// 生成高德地图 HTML
+function generateMapHTML() {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    html, body, #container { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    .amap-logo, .amap-copyright { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="container"></div>
+  <script>
+    window._AMapSecurityConfig = { securityJsCode: '${AMAP_SECRET}' };
+  </script>
+  <script src="https://webapi.amap.com/maps?v=2.0&key=${AMAP_KEY}"></script>
+  <script>
+    var map = new AMap.Map('container', {
+      zoom: 14,
+      center: [116.397428, 39.90923],
+      mapStyle: 'amap://styles/macaron',
+      resizeEnable: true,
+    });
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(pos) {
+        map.setCenter([pos.coords.longitude, pos.coords.latitude]);
+        new AMap.Marker({
+          position: [pos.coords.longitude, pos.coords.latitude],
+          map: map,
+          content: '<div style="background:#FF4757;color:#fff;padding:4px 10px;border-radius:12px;font-size:12px;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3);font-weight:bold;">📍 我</div>',
+          offset: new AMap.Pixel(-25, -15),
+        });
+      }, function() {});
+    }
+  </script>
+</body>
+</html>
+`;
+}
 
 function getInitial(name) { return name.charAt(0); }
 
@@ -21,15 +78,17 @@ export default function CirclesScreen() {
   const [showPublish, setShowPublish] = useState(false);
   const [newText, setNewText] = useState('');
   const [newImages, setNewImages] = useState([]);
+  const [mapFullScreen, setMapFullScreen] = useState(false);
+  const [mapLoading, setMapLoading] = useState(true);
 
   const MOCK_POSTS = useMemo(() => {
     const d = t('circles_data', { returnObjects: true });
-    const colors = ['#FF6B6B', '#FFA940', '#52C41A', '#7C5CFC', '#13C2C2', '#EB2F96', '#FA8C16', '#2F54EB'];
+    const colorsArr = ['#FF6B6B', '#FFA940', '#52C41A', '#7C5CFC', '#13C2C2', '#EB2F96', '#FA8C16', '#2F54EB'];
     const keys = ['post1', 'post2', 'post3', 'post4', 'post5', 'post6', 'post7', 'post8'];
     return keys.map((k, i) => ({
       id: String(i + 1),
       author: d[k].author,
-      color: colors[i],
+      color: colorsArr[i],
       content: d[k].content,
       time: d[k].time,
       likes: d[k].likes,
@@ -125,6 +184,57 @@ export default function CirclesScreen() {
     );
   };
 
+  // 地图预览区域
+  const renderMapPreview = () => {
+    if (activeTab !== 0) return null;
+
+    if (!isKeyConfigured) {
+      return (
+        <View style={s.mapSection}>
+          <View style={s.mapKeyHint}>
+            <Text style={s.mapKeyHintIcon}>🗺️</Text>
+            <Text style={s.mapKeyHintTitle}>高德地图</Text>
+            <Text style={s.mapKeyHintText}>
+              请先配置高德地图 Key{'\n'}
+              免费申请: https://lbs.amap.com{'\n'}
+              在 CirclesScreen.js 顶部填入 AMAP_KEY 和 AMAP_SECRET
+            </Text>
+          </View>
+        </View>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        style={s.mapSection}
+        onPress={() => setMapFullScreen(true)}
+        activeOpacity={0.9}
+      >
+        {mapLoading && (
+          <View style={s.mapLoading}>
+            <ActivityIndicator size="small" color="#FF4757" />
+            <Text style={s.mapLoadingText}>地图加载中...</Text>
+          </View>
+        )}
+        <WebView
+          source={{ html: generateMapHTML() }}
+          style={s.mapPreview}
+          scrollEnabled={false}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          onLoadEnd={() => setMapLoading(false)}
+          mixedContentMode="always"
+          originWhitelist={['*']}
+          cacheEnabled={true}
+          startInLoadingState={false}
+        />
+        <View style={s.mapHint} pointerEvents="none">
+          <Text style={s.mapHintText}>📍 点击查看附近的人</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   return (
     <SafeAreaView style={[s.container, { backgroundColor: theme.bg }]}>
       <StatusBar barStyle="light-content" backgroundColor="#FF4757" />
@@ -144,6 +254,9 @@ export default function CirclesScreen() {
         ))}
       </View>
 
+      {/* 地图预览 - 仅在"附近圈子"标签显示 */}
+      {renderMapPreview()}
+
       <FlatList
         data={displayPosts}
         keyExtractor={i => i.id}
@@ -151,6 +264,28 @@ export default function CirclesScreen() {
         contentContainerStyle={{ padding: 12, paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* 全屏地图弹窗 */}
+      <Modal visible={mapFullScreen} animationType="slide" onRequestClose={() => setMapFullScreen(false)}>
+        <SafeAreaView style={s.mapFullWrap}>
+          <View style={s.mapHeader}>
+            <TouchableOpacity onPress={() => setMapFullScreen(false)} style={s.mapCloseBtn}>
+              <Text style={s.mapCloseText}>← 返回</Text>
+            </TouchableOpacity>
+            <Text style={s.mapHeaderTitle}>附近的人</Text>
+            <View style={{ width: 60 }} />
+          </View>
+          <WebView
+            source={{ html: generateMapHTML() }}
+            style={{ flex: 1 }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            mixedContentMode="always"
+            originWhitelist={['*']}
+            cacheEnabled={true}
+          />
+        </SafeAreaView>
+      </Modal>
 
       {/* 发布弹窗 */}
       <Modal visible={showPublish} animationType="slide" transparent={false} onRequestClose={() => setShowPublish(false)}>
@@ -241,6 +376,55 @@ const s = StyleSheet.create({
   tabTxt: { fontSize: 15, color: 'rgba(255,255,255,0.65)', fontWeight: '500' },
   tabTxtActive: { color: '#fff', fontWeight: '700', fontSize: 16 },
   tabDot: { width: 24, height: 3, borderRadius: 2, backgroundColor: '#fff', marginTop: 6 },
+
+  // 地图相关样式
+  mapSection: {
+    height: 180,
+    position: 'relative',
+    backgroundColor: '#f0f0f0',
+  },
+  mapPreview: {
+    flex: 1,
+    borderRadius: 0,
+  },
+  mapLoading: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    justifyContent: 'center', alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    zIndex: 5,
+  },
+  mapLoadingText: {
+    fontSize: 13, color: '#999', marginTop: 8,
+  },
+  mapHint: {
+    position: 'absolute', bottom: 10, left: 0, right: 0,
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  mapHintText: {
+    fontSize: 12, color: '#FF4757', fontWeight: '600',
+    backgroundColor: 'rgba(255,255,255,0.85)',
+    paddingHorizontal: 14, paddingVertical: 5,
+    borderRadius: 12, overflow: 'hidden',
+  },
+  mapKeyHint: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    padding: 20,
+  },
+  mapKeyHintIcon: { fontSize: 36, marginBottom: 8 },
+  mapKeyHintTitle: { fontSize: 16, fontWeight: '700', color: '#333', marginBottom: 6 },
+  mapKeyHintText: { fontSize: 12, color: '#888', textAlign: 'center', lineHeight: 18 },
+
+  // 全屏地图
+  mapFullWrap: { flex: 1, backgroundColor: '#FF4757' },
+  mapHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 20, paddingVertical: 14,
+    backgroundColor: '#FF4757',
+  },
+  mapCloseBtn: { padding: 4 },
+  mapCloseText: { fontSize: 16, color: '#fff', fontWeight: '600' },
+  mapHeaderTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
 
   postCard: {
     borderRadius: 16, padding: 16, marginBottom: 12,
