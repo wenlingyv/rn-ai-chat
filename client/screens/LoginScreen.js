@@ -113,15 +113,15 @@ const LoginScreen = ({ navigation, route }) => {
               </View>
               <View style={styles.loginLogo}>
                 <Text style={styles.logoIcon}>💬</Text>
-                <Text style={styles.logoTitle}>AI 聊天助手</Text>
-                <Text style={styles.logoSubtitle}>开启智能对话之旅</Text>
+                <Text style={styles.logoTitle}>MeetU</Text>
+                <Text style={styles.logoSubtitle}>瞬间相遇，记录社交瞬间</Text>
               </View>
             </View>
 
             <View style={styles.loginCard}>
               <View style={styles.cardHeader}>
                 <Text style={styles.cardTitle}>欢迎回来</Text>
-                <Text style={styles.cardSubtitle}>登录您的账号，继续精彩对话</Text>
+                <Text style={styles.cardSubtitle}>登录您的账号，继续精彩社交</Text>
               </View>
 
               <View style={styles.form}>
@@ -185,8 +185,8 @@ const LoginScreen = ({ navigation, route }) => {
               </View>
               <View style={styles.registerLogo}>
                 <Text style={styles.registerLogoIcon}>✨</Text>
-                <Text style={styles.registerLogoTitle}>创建新账号</Text>
-                <Text style={styles.registerLogoSubtitle}>加入我们，开启新体验</Text>
+                <Text style={styles.registerLogoTitle}>加入 MeetU</Text>
+                <Text style={styles.registerLogoSubtitle}>瞬间相遇，记录社交瞬间</Text>
               </View>
             </View>
 
