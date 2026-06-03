@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
@@ -662,6 +663,7 @@ setRealtimeHandler((request, socket, head) => {
   });
 });
 
-server.listen(5000, '0.0.0.0', () => {
-  console.log("✅ 服务已启动 端口5000 | RAG 已集成 | 认证系统已启用 | WebSocket 已启用");
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ 服务已启动 端口${PORT} | RAG 已集成 | 认证系统已启用 | WebSocket 已启用`);
 });

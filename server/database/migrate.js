@@ -2,13 +2,13 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-// 数据库配置
+// 数据库配置（支持环境变量，Docker 部署兼容）
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'ai_chat',
-  password: '123456',
-  port: 5432,
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'ai_chat',
+  password: process.env.DB_PASSWORD || '123456',
+  port: parseInt(process.env.DB_PORT, 10) || 5432,
 });
 
 // 读取SQL文件

@@ -2,18 +2,18 @@ const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
 
-// 数据库配置
+// 数据库配置（支持环境变量，Docker 部署兼容）
 const pool = new Pool({
-  user: 'postgres',
-  host: 'localhost',
-  database: 'ai_chat',
-  password: '123456',
-  port: 5432,
+  user: process.env.DB_USER || 'postgres',
+  host: process.env.DB_HOST || 'localhost',
+  database: process.env.DB_NAME || 'ai_chat',
+  password: process.env.DB_PASSWORD || '123456',
+  port: parseInt(process.env.DB_PORT, 10) || 5432,
   client_encoding: 'UTF8',
-  max: 20,                      // 最大连接数
-  connectionTimeoutMillis: 5000, // 连接超时5秒
-  query_timeout: 10000,          // 查询超时10秒
-  idleTimeoutMillis: 30000,      // 空闲连接30秒后释放
+  max: 20,
+  connectionTimeoutMillis: 5000,
+  query_timeout: 10000,
+  idleTimeoutMillis: 30000,
 });
 
 pool.on('error', (err) => console.error('PostgreSQL 连接异常：', err.message));
