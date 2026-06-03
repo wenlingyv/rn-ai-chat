@@ -2,7 +2,7 @@
 // 【新增】全局主题上下文 — 管理亮/暗模式 + 6种主题色
 // 使用 React Context + AsyncStorage 持久化
 // ============================================================
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ThemeContext = createContext();
@@ -76,7 +76,7 @@ export function ThemeProvider({ children }) {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify({ palette: paletteKey, mode }));
   }, [paletteKey, mode]);
 
-  const value = {
+  const value = useMemo(() => ({
     paletteKey,
     setPaletteKey,
     mode,
@@ -85,7 +85,7 @@ export function ThemeProvider({ children }) {
     theme: MODES[mode],
     palettes: PALETTES,
     paletteKeys: PALETTE_KEYS,
-  };
+  }), [paletteKey, mode]);
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }

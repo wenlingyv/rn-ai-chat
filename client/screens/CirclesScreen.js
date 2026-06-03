@@ -7,7 +7,12 @@ import {
   SafeAreaView, StatusBar, Modal, TextInput,
   Platform, Image, ScrollView, Alert, ActivityIndicator
 } from 'react-native';
-import { WebView } from 'react-native-webview';
+let WebView = null;
+try {
+  WebView = require('react-native-webview').WebView;
+} catch (e) {
+  // WebView not available in Expo Go — render fallback
+}
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../ThemeContext';
 import { useTranslation } from 'react-i18next';
@@ -23,6 +28,18 @@ const AMAP_SECRET = '2f6a062e7a092d821911e9297c834aa7';
 
 // 判断 Key 是否已配置
 const isKeyConfigured = AMAP_KEY !== 'YOUR_AMAP_KEY' && AMAP_KEY.length > 0;
+
+// WebView 不可用时的降级组件
+function WebViewFallback() {
+  return (
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
+      <Text style={{ fontSize: 36, marginBottom: 8 }}>🗺️</Text>
+      <Text style={{ fontSize: 14, color: '#888', textAlign: 'center' }}>
+        地图功能需要开发环境{'\n'}Expo Go 不支持 WebView
+      </Text>
+    </View>
+  );
+}
 
 // 生成高德地图 HTML
 function generateMapHTML() {
@@ -216,18 +233,22 @@ export default function CirclesScreen() {
             <Text style={s.mapLoadingText}>地图加载中...</Text>
           </View>
         )}
-        <WebView
-          source={{ html: generateMapHTML() }}
-          style={s.mapPreview}
-          scrollEnabled={false}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          onLoadEnd={() => setMapLoading(false)}
-          mixedContentMode="always"
-          originWhitelist={['*']}
-          cacheEnabled={true}
-          startInLoadingState={false}
-        />
+        {WebView ? (
+          <WebView
+            source={{ html: generateMapHTML() }}
+            style={s.mapPreview}
+            scrollEnabled={false}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            onLoadEnd={() => setMapLoading(false)}
+            mixedContentMode="always"
+            originWhitelist={['*']}
+            cacheEnabled={true}
+            startInLoadingState={false}
+          />
+        ) : (
+          <WebViewFallback />
+        )}
         <View style={s.mapHint} pointerEvents="none">
           <Text style={s.mapHintText}>📍 点击查看附近的人</Text>
         </View>
@@ -275,15 +296,19 @@ export default function CirclesScreen() {
             <Text style={s.mapHeaderTitle}>附近的人</Text>
             <View style={{ width: 60 }} />
           </View>
-          <WebView
-            source={{ html: generateMapHTML() }}
-            style={{ flex: 1 }}
-            javaScriptEnabled={true}
-            domStorageEnabled={true}
-            mixedContentMode="always"
-            originWhitelist={['*']}
-            cacheEnabled={true}
-          />
+          {WebView ? (
+            <WebView
+              source={{ html: generateMapHTML() }}
+              style={{ flex: 1 }}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              mixedContentMode="always"
+              originWhitelist={['*']}
+              cacheEnabled={true}
+            />
+          ) : (
+            <WebViewFallback />
+          )}
         </SafeAreaView>
       </Modal>
 

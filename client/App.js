@@ -20,6 +20,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import ThemeSettingsScreen from './screens/ThemeSettingsScreen';
 import LoginScreen from './screens/LoginScreen';
 import ChatDetailScreen from './screens/ChatDetailScreen';
+import VoiceChatScreen from './screens/VoiceChatScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -93,6 +94,7 @@ function AuthRouter() {
           <Stack.Screen name="MainTabs" component={MainTabs} />
           <Stack.Screen name="ThemeSettings" component={ThemeSettingsScreen} />
           <Stack.Screen name="ChatDetail" component={ChatDetailScreen} />
+          <Stack.Screen name="VoiceChat" component={VoiceChatScreen} />
         </>
       ) : (
         <Stack.Screen name="Login" component={LoginScreen} />

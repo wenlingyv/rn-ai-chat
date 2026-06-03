@@ -14,7 +14,7 @@ const API_URL = 'http://192.168.43.231:5000/api/chat';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
 
-export default function AIChatScreen() {
+export default function AIChatScreen({ navigation }) {
   const { colors, theme } = useTheme();
   const { t } = useTranslation();
   const [messages, setMessages] = useState([]);
@@ -281,9 +281,14 @@ export default function AIChatScreen() {
               <Text style={[styles.menuBtnText, { color: theme.text }]}>☰</Text>
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: theme.text }]}>{t('ai.title')}</Text>
-            <TouchableOpacity onPress={clearChat}>
-              <Text style={styles.clearText}>{t('common.clear')}</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity onPress={() => navigation.navigate('VoiceChat')} style={{ marginRight: 12 }}>
+                <Text style={{ fontSize: 22 }}>🎤</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={clearChat}>
+                <Text style={styles.clearText}>{t('common.clear')}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {drawerOpen && <TouchableOpacity style={styles.overlay} onPress={() => setDrawerOpen(false)} />}

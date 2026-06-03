@@ -9,7 +9,16 @@ const pool = new Pool({
   database: 'ai_chat',
   password: '123456',
   port: 5432,
+  client_encoding: 'UTF8',
+  max: 20,                      // 最大连接数
+  connectionTimeoutMillis: 5000, // 连接超时5秒
+  query_timeout: 10000,          // 查询超时10秒
+  idleTimeoutMillis: 30000,      // 空闲连接30秒后释放
 });
+
+pool.on('error', (err) => console.error('PostgreSQL 连接异常：', err.message));
+pool.on('connect', () => {}); // 连接池事件
+pool.on('remove', () => {});  // 连接释放事件
 
 // 读取SQL文件
 const readSQLFile = (filePath) => {

@@ -5,10 +5,28 @@ const pool = require('./database');
 
 const onlineUsers = new Map();
 
+let realtimeHandler = null;
+
+function setRealtimeHandler(handler) {
+  realtimeHandler = handler;
+}
+
 function initWebSocket(server) {
   const wss = new WebSocket.Server({ noServer: true });
 
   server.on('upgrade', (request, socket, head) => {
+    const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+    
+    if (pathname === '/api/realtime/ws') {
+      if (realtimeHandler) {
+        realtimeHandler(request, socket, head);
+      } else {
+        socket.write('HTTP/1.1 503 Service Unavailable\r\n\r\n');
+        socket.destroy();
+      }
+      return;
+    }
+
     const params = new URL(request.url, `http://${request.headers.host}`).searchParams;
     const token = params.get('token');
 
@@ -54,6 +72,11 @@ function initWebSocket(server) {
         console.log(`📨 收到用户 ${userId} 的 WebSocket 消息:`, data);
 
         switch (data.type) {
+          case 'ping': {
+            ws.send(JSON.stringify({ type: 'pong' }));
+            break;
+          }
+
           case 'chat': {
             const { senderId, receiverId, content } = data;
 
@@ -211,5 +234,6 @@ function sendToUser(userId, data) {
 module.exports = {
   initWebSocket,
   getOnlineUsers,
-  sendToUser
+  sendToUser,
+  setRealtimeHandler
 };

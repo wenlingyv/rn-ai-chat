@@ -3,7 +3,6 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   SafeAreaView, StatusBar, ScrollView, Modal, Dimensions, Image
 } from 'react-native';
-import { WebView } from 'react-native-webview';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme } from '../ThemeContext';
 import { useTranslation } from 'react-i18next';
@@ -151,22 +150,8 @@ export default function SettingsScreen({ navigation }) {
 
       <ScrollView contentContainerStyle={st.scrollBody}>
         
-        <View style={[st.profileCard, { backgroundColor: 'transparent' }]}>
-          
-          <View style={st.particleWrap}>
-            <WebView
-              source={require('../assets/3dCard.html')}
-              style={st.webView}
-              javaScriptEnabled={true}
-              domStorageEnabled={true}
-              backgroundColor="transparent"
-              scrollEnabled={false}
-              pointerEvents="none"
-              originWhitelist={['*']}
-              allowFileAccess={true}
-              allowUniversalAccessFromFileURLs={true}
-            />
-          </View>
+        <View style={[st.profileCard, { backgroundColor: colors.primary }]}>
+
 
           <TouchableOpacity 
             style={st.avatarWrap} 
@@ -348,12 +333,8 @@ const st = StyleSheet.create({
     paddingTop: 28, paddingBottom: 24, paddingHorizontal: 24,
     alignItems: 'center',
     borderBottomLeftRadius: 28, borderBottomRightRadius: 28,
-    overflow: 'hidden', position: 'relative',
+    position: 'relative',
   },
-  particleWrap: {
-    position: 'absolute', top:0, left:0, right:0, bottom:0, zIndex:1
-  },
-  webView: { flex:1, backgroundColor:'transparent' },
 
   avatarWrap: { position:'relative', marginBottom:12, zIndex:2 },
   avatar: {

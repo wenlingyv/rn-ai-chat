@@ -54,9 +54,11 @@ export default function ChatDetailScreen({ route, navigation }) {
     try {
       setLoading(true);
       const res = await authFetch(`${API_URL}/message/history/${friendId}?limit=50`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setMessages(data.data.map(normalizeMessage));
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.data)) {
+          setMessages(data.data.map(normalizeMessage));
+        }
       }
     } catch (e) {
       console.error('Load history error:', e);

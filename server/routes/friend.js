@@ -75,12 +75,15 @@ router.get('/pending', async (req, res) => {
 router.get('/search', async (req, res) => {
   try {
     const { keyword } = req.query;
+    console.log(`🔍 搜索用户: keyword="${keyword}", userId=${req.user.id}`);
     if (!keyword) {
       return res.status(400).json({ success: false, message: 'keyword is required' });
     }
     const result = await friendService.searchUsers(keyword, req.user.id);
+    console.log(`🔍 搜索结果: 找到${result.data ? result.data.length : 0}个用户`);
     res.json(result);
   } catch (err) {
+    console.error('🔍 搜索错误:', err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });

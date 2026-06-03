@@ -30,9 +30,11 @@ export default function MessagesScreen({ navigation }) {
 
   const loadConversations = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_BASE}/message/conversations`);
-      const data = await res.json();
-      if (data.success) setConversations(data.data);
+      const res = await authFetch(`${API_BASE}/message/conversations`, { timeout: 8000 });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) setConversations(data.data);
+      }
     } catch (e) {
       console.error('loadConversations error:', e);
     }
@@ -40,9 +42,11 @@ export default function MessagesScreen({ navigation }) {
 
   const loadFriends = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_BASE}/friend/list`);
-      const data = await res.json();
-      if (data.success) setFriends(data.data);
+      const res = await authFetch(`${API_BASE}/friend/list`, { timeout: 8000 });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) setFriends(data.data);
+      }
     } catch (e) {
       console.error('loadFriends error:', e);
     }
@@ -50,9 +54,11 @@ export default function MessagesScreen({ navigation }) {
 
   const loadPending = useCallback(async () => {
     try {
-      const res = await authFetch(`${API_BASE}/friend/pending`);
-      const data = await res.json();
-      if (data.success) setPendingRequests(data.data);
+      const res = await authFetch(`${API_BASE}/friend/pending`, { timeout: 8000 });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) setPendingRequests(data.data);
+      }
     } catch (e) {
       console.error('loadPending error:', e);
     }
@@ -131,14 +137,37 @@ export default function MessagesScreen({ navigation }) {
   const handleSearch = async () => {
     if (!searchKeyword.trim()) return;
     setSearching(true);
+    setSearchResults([]);
     try {
-      const res = await authFetch(`${API_BASE}/friend/search?keyword=${encodeURIComponent(searchKeyword.trim())}`);
+      const url = `${API_BASE}/friend/search?keyword=${encodeURIComponent(searchKeyword.trim())}`;
+      console.log('搜索开始, URL:', url);
+      const res = await authFetch(url, { timeout: 10000 });
+      console.log('搜索响应状态:', res.status);
+      if (res.status === 401) {
+        Alert.alert('提示', '登录已过期，请重新登录');
+        return;
+      }
+      if (!res.ok) {
+        Alert.alert('搜索失败', `服务器错误 (${res.status})`);
+        return;
+      }
       const data = await res.json();
+      console.log('搜索响应数据:', JSON.stringify(data).substring(0, 200));
       if (data.success) {
-        setSearchResults(data.data);
+        setSearchResults(data.data || []);
+        if (!data.data || data.data.length === 0) {
+          Alert.alert('提示', '未找到匹配的用户');
+        }
+      } else {
+        Alert.alert('搜索失败', data.message || '搜索出错');
       }
     } catch (e) {
       console.error('search error:', e);
+      if (e.message && e.message.includes('超时')) {
+        Alert.alert('请求超时', '搜索请求超时，请检查网络后重试');
+      } else {
+        Alert.alert('网络错误', '无法连接到服务器，请检查网络');
+      }
     } finally {
       setSearching(false);
     }
