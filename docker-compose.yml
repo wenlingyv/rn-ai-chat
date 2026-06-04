@@ -15,11 +15,8 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./server/database/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
-    ports:
-      - "5432:5432"
     networks:
       - rn-ai-chat-net
-    # 2GB 服务器内存有限，限制数据库资源
     deploy:
       resources:
         limits:
@@ -49,19 +46,54 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-123456}
       DB_NAME: ${DB_NAME:-ai_chat}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
-    ports:
-      - "5000:5000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      MIMO_KEY: ${MIMO_KEY}
+      BOCHA_KEY: ${BOCHA_KEY}
+      ZHIPU_API_KEY: ${ZHIPU_API_KEY}
+      ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_access_token_secret}
+      REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_refresh_token_secret}
     networks:
       - rn-ai-chat-net
-    # 限制资源
     deploy:
       resources:
         limits:
           memory: 512M
         reservations:
+          memory: 128M
+
+  # Expo Web 静态文件
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: rn-ai-chat-client
+    restart: unless-stopped
+    networks:
+      - rn-ai-chat-net
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+  # Nginx 反向代理
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: rn-ai-chat-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - server
+      - client
+    volumes:
+      # 挂载 client 构建产物（可选，用于热更新）
+      - ./client/dist:/usr/share/nginx/html:ro
+    networks:
+      - rn-ai-chat-net
+    deploy:
+      resources:
+        limits:
           memory: 128M
 
 volumes:
