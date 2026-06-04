@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 
 function getBaseUrl() {
   // Web 环境：API 和前端同域名，直接用相对路径
-  if (typeof document !== 'undefined') {
+  if (Platform.OS === 'web') {
     return window.location.origin;
   }
   // 原生环境：使用环境变量，回退到本地开发地址
@@ -14,7 +14,7 @@ function getBaseUrl() {
 
 function getWsUrl() {
   // Web 环境：自动根据协议选择 ws/wss
-  if (typeof document !== 'undefined') {
+  if (Platform.OS === 'web') {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}`;
   }
