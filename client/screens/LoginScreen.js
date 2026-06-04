@@ -6,8 +6,9 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../AuthContext';
 import TransitionScreen from './TransitionScreen';
+import { API_BASE } from '../config';
 
-const API_URL = 'http://192.168.43.231:5000';
+const API_URL = API_BASE;
 
 const LoginScreen = ({ navigation, route }) => {
   const { t } = useTranslation();
@@ -42,7 +43,7 @@ const LoginScreen = ({ navigation, route }) => {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/auth/login`, {
+      const response = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
@@ -76,7 +77,7 @@ const LoginScreen = ({ navigation, route }) => {
 
     setLoading(true);
     try {
-      const response = await fetch(`${API_URL}/api/auth/register`, {
+      const response = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
