@@ -8,7 +8,8 @@ const WebSocketContext = createContext({
   sendMessage: () => {},
 });
 
-const WS_URL = 'ws://192.168.43.231:5000/ws';
+import { WS_URL as BASE_WS_URL } from './config';
+const WS_URL = `${BASE_WS_URL}/ws`;
 
 export const WebSocketProvider = ({ children }) => {
   const { accessToken, isAuthenticated } = useAuth();

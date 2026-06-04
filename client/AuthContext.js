@@ -67,7 +67,7 @@ const AuthContext = createContext({
   authFetch: () => {},
 });
 
-const API_URL = 'http://192.168.43.231:5000/api';
+import { API_BASE as API_URL } from './config';
 
 export const AuthProvider = ({ children }) => {
   const [state, dispatch] = useReducer(authReducer, initialState);

@@ -8,6 +8,7 @@ import { useTheme } from '../ThemeContext';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from '../LanguageContext';
 import { useAuth } from '../AuthContext';
+import { API_BASE } from '../config';
 
 const { width } = Dimensions.get('window');
 
@@ -58,7 +59,7 @@ export default function SettingsScreen({ navigation }) {
     
     if (user) {
       try {
-        await authFetch(`http://192.168.43.231:5000/api/auth/profile`, {
+        await authFetch(`${API_BASE}/auth/profile`, {
           method: 'PUT',
           body: JSON.stringify({ avatar }),
         });
@@ -91,7 +92,7 @@ export default function SettingsScreen({ navigation }) {
       setCustomAvatar('🖼️');
       
       try {
-        await authFetch(`http://192.168.43.231:5000/api/auth/profile`, {
+        await authFetch(`${API_BASE}/auth/profile`, {
           method: 'PUT',
           body: JSON.stringify({ avatar: base64Data }),
         });

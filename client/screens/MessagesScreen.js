@@ -8,8 +8,7 @@ import { useAuth } from '../AuthContext';
 import { useWebSocket } from '../WebSocketContext';
 import { useTheme } from '../ThemeContext';
 import { useTranslation } from 'react-i18next';
-
-const API_BASE = 'http://192.168.43.231:5000/api';
+import { API_BASE } from '../config';
 
 export default function MessagesScreen({ navigation }) {
   const { user, authFetch } = useAuth();

@@ -10,7 +10,8 @@ import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../ThemeContext';
 import { useTranslation } from 'react-i18next';
 
-const API_URL = 'http://192.168.43.231:5000/api/chat';
+import { API_BASE } from '../config';
+const API_URL = `${API_BASE}/chat`;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const DRAWER_WIDTH = SCREEN_WIDTH * 0.75;
 
@@ -34,7 +35,7 @@ export default function AIChatScreen({ navigation }) {
 
   const clearChat = async () => {
     try {
-      await fetch("http://192.168.43.231:5000/api/clear", {
+      await fetch(`${API_BASE}/clear`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: "default" }),

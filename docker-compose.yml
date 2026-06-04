@@ -51,6 +51,8 @@ services:
       ZHIPU_API_KEY: ${ZHIPU_API_KEY}
       ACCESS_TOKEN_SECRET: ${ACCESS_TOKEN_SECRET:-your_access_token_secret}
       REFRESH_TOKEN_SECRET: ${REFRESH_TOKEN_SECRET:-your_refresh_token_secret}
+      # 生产域名（填写你的实际域名，多个用逗号分隔）
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
     networks:
       - rn-ai-chat-net
     deploy:
@@ -83,12 +85,16 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     depends_on:
       - server
       - client
     volumes:
       # 挂载 client 构建产物（可选，用于热更新）
       - ./client/dist:/usr/share/nginx/html:ro
+      # ⚠️ 挂载 SSL 证书目录（将证书文件放到服务器的 /etc/ssl/rn-ai-chat/ 下）
+      # 文件名要求：fullchain.pem（证书链）、privkey.pem（私钥）
+      - /etc/ssl/rn-ai-chat:/etc/nginx/ssl:ro
     networks:
       - rn-ai-chat-net
     deploy:

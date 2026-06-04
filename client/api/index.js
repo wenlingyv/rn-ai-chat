@@ -6,7 +6,7 @@ import { useAuth } from '../AuthContext';
 // 创建基础API实例
 const createAPI = () => {
   const api = require('axios').create({
-    baseURL: 'http://localhost:5000/api',
+    baseURL: '/api',
     timeout: 10000,
     headers: {
       'Content-Type': 'application/json',

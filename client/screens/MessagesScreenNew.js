@@ -12,7 +12,7 @@ import { userAPI, chatAPI } from '../api';
 
 const MessagesScreenNew = () => {
   const { t } = useTranslation();
-  const { user } = useAuth();
+  const { user, authFetch } = useAuth();
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -26,7 +26,7 @@ const MessagesScreenNew = () => {
   useEffect(() => {
     const loadUsers = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/auth/profile');
+        const response = await authFetch('/api/auth/profile');
         if (response.ok) {
           const userData = await response.json();
           // 这里应该获取其他用户列表，暂时模拟

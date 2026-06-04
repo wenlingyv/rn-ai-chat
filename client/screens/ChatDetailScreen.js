@@ -7,8 +7,7 @@ import {
 import { useAuth } from '../AuthContext';
 import { useWebSocket } from '../WebSocketContext';
 import { useTheme } from '../ThemeContext';
-
-const API_URL = 'http://192.168.43.231:5000/api';
+import { API_BASE as API_URL } from '../config';
 
 const formatTime = (dateStr) => {
   const date = new Date(dateStr);

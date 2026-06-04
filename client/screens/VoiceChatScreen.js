@@ -13,8 +13,9 @@ import {
 import { Audio } from 'expo-av';
 import * as FileSystem from 'expo-file-system';
 import { useTheme } from '../ThemeContext';
+import { WS_URL } from '../config';
 
-const PROXY_WS_URL = 'ws://192.168.43.231:5000/api/realtime/ws';
+const PROXY_WS_URL = `${WS_URL}/api/realtime/ws`;
 
 export default function VoiceChatScreen({ navigation }) {
   const { colors, theme } = useTheme();

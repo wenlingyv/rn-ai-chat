@@ -3,6 +3,9 @@
 # ============================================
 FROM node:20-alpine
 
+# 安装 ffmpeg（语音对话音频转码需要）
+RUN apk add --no-cache ffmpeg
+
 # 设置工作目录
 WORKDIR /app
 

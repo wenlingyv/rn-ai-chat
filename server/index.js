@@ -36,7 +36,13 @@ class LocalEmbedding {
 }
 
 const app = express();
-app.use(cors());
+
+// ---- CORS：生产环境允许 HTTPS 域名，开发环境兜底 ----
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+app.use(cors({
+  origin: CORS_ORIGIN,
+  credentials: true,
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use((req, res, next) => {
@@ -69,9 +75,10 @@ app.use('/api/message', messageRoutes);
 initDB().catch(e => console.error("❌ 建表失败：", e));
 
 // -------------------- 全局配置 --------------------
-const MIMO_KEY = "tp-stjygn6w8myoh5z7nve6rti23b1clwi9jp46frk3nld9ahwy";
-const BOCHA_KEY = "sk-77d284097eff496db8c11ecc7ef22b90";
-const ZHIPU_API_KEY = "92603d7d96d240f98a479df60adaa088.hQqpy6qzUq8mCNUc";
+// ⚠️ 生产环境所有 Key 必须通过 .env 注入，代码中不留任何真实值
+const MIMO_KEY = process.env.MIMO_KEY;
+const BOCHA_KEY = process.env.BOCHA_KEY;
+const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY;
 
 const ROLE_PROMPTS = {
   normal: "你是实用型AI助手，正常友好回答问题。",
