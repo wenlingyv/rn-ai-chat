@@ -108,9 +108,9 @@ BEGIN
 END;
 $$;
 
--- 插入默认用户（用于兼容现有的默认消息）
-INSERT INTO users (phone, username, nickname)
-VALUES ('default', 'default_user', '默认用户')
+-- 插入默认用户（用于兼容现有的默认消息，密码使用 bcrypt hash 占位符）
+INSERT INTO users (phone, username, password, nickname)
+VALUES ('default', 'default_user', '$2a$10$placeholder', '默认用户')
 ON CONFLICT (username) DO NOTHING;
 
 -- 创建清理过期数据的函数
