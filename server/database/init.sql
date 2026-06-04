@@ -26,10 +26,50 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   last_used_at TIMESTAMP
 );
 
--- 修改聊天历史表
-ALTER TABLE chat_history
-ADD COLUMN IF NOT EXISTS sender_id INTEGER REFERENCES users(id),
-ADD COLUMN IF NOT EXISTS receiver_id INTEGER REFERENCES users(id);
+-- 创建聊天历史表
+CREATE TABLE IF NOT EXISTS chat_history (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER REFERENCES users(id),
+  role VARCHAR(20) NOT NULL,
+  content TEXT NOT NULL,
+  model VARCHAR(50),
+  sender_id INTEGER REFERENCES users(id),
+  receiver_id INTEGER REFERENCES users(id),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建好友关系表
+CREATE TABLE IF NOT EXISTS friendships (
+  id SERIAL PRIMARY KEY,
+  requester_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  addressee_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) DEFAULT 'pending',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(requester_id, addressee_id),
+  CHECK(requester_id != addressee_id)
+);
+
+-- 创建私聊消息表
+CREATE TABLE IF NOT EXISTS private_messages (
+  id SERIAL PRIMARY KEY,
+  sender_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  receiver_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+  content TEXT NOT NULL,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 创建验证码缓存表
+CREATE TABLE IF NOT EXISTS verification_codes (
+  id SERIAL PRIMARY KEY,
+  phone VARCHAR(20) NOT NULL,
+  code VARCHAR(6) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  attempts INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(phone, code)
+);
 
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
@@ -38,6 +78,14 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_expires_at ON user_sessions(expires
 CREATE INDEX IF NOT EXISTS idx_user_sessions_refresh_token_hash ON user_sessions(refresh_token_hash);
 CREATE INDEX IF NOT EXISTS idx_chat_history_user_pair ON chat_history(sender_id, receiver_id);
 CREATE INDEX IF NOT EXISTS idx_chat_history_created_at ON chat_history(created_at);
+CREATE INDEX IF NOT EXISTS idx_friendships_requester ON friendships(requester_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_addressee ON friendships(addressee_id);
+CREATE INDEX IF NOT EXISTS idx_friendships_status ON friendships(status);
+CREATE INDEX IF NOT EXISTS idx_private_messages_sender ON private_messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_private_messages_receiver ON private_messages(receiver_id);
+CREATE INDEX IF NOT EXISTS idx_private_messages_created_at ON private_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_phone ON verification_codes(phone);
+CREATE INDEX IF NOT EXISTS idx_verification_codes_expires_at ON verification_codes(expires_at);
 
 -- 创建触发器：自动更新updated_at字段
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -61,39 +109,15 @@ END;
 $$;
 
 -- 插入默认用户（用于兼容现有的默认消息）
-INSERT INTO users (phone, nickname)
-VALUES ('default', '默认用户')
-ON CONFLICT (phone) DO NOTHING;
-
--- 创建验证码缓存表（如果使用数据库存储验证码）
-CREATE TABLE IF NOT EXISTS verification_codes (
-  id SERIAL PRIMARY KEY,
-  phone VARCHAR(20) NOT NULL,
-  code VARCHAR(6) NOT NULL,
-  expires_at TIMESTAMP NOT NULL,
-  attempts INTEGER DEFAULT 0,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  UNIQUE(phone, code)
-);
-
--- 创建索引
-CREATE INDEX IF NOT EXISTS idx_verification_codes_phone ON verification_codes(phone);
-CREATE INDEX IF NOT EXISTS idx_verification_codes_expires_at ON verification_codes(expires_at);
+INSERT INTO users (phone, username, nickname)
+VALUES ('default', 'default_user', '默认用户')
+ON CONFLICT (username) DO NOTHING;
 
 -- 创建清理过期数据的函数
 CREATE OR REPLACE FUNCTION cleanup_expired_data()
 RETURNS VOID AS $$
 BEGIN
-  -- 清理过期的验证码
   DELETE FROM verification_codes WHERE expires_at < CURRENT_TIMESTAMP;
-
-  -- 清理过期的会话
   DELETE FROM user_sessions WHERE expires_at < CURRENT_TIMESTAMP OR is_revoked = true;
-
-  -- 清理7天前的聊天历史（可选）
-  -- DELETE FROM chat_history WHERE created_at < CURRENT_TIMESTAMP - INTERVAL '7 days';
 END;
 $$ language 'plpgsql';
-
--- 创建清理任务（可以手动调用）
--- SELECT cleanup_expired_data();
