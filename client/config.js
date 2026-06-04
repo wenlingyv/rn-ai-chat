@@ -1,26 +1,11 @@
-// API 配置 — 自动检测运行环境
-// Web 版：使用当前域名（同源部署）
-// Expo Go / 原生：使用环境变量或回退到本地地址
+// API 配置
+// Web 版部署时 EXPO_PUBLIC_API_URL 留空即可（使用相对路径，同源部署）
+// 原生开发时设置 EXPO_PUBLIC_API_URL=http://192.168.43.231:5000
 
-// 用 try-catch + globalThis 确保运行时求值，避免 Metro bundler 静态分析
-function getBaseUrl() {
-  try {
-    if (globalThis.location && globalThis.location.origin) {
-      return globalThis.location.origin;
-    }
-  } catch (e) { /* native 环境没有 location */ }
-  return 'http://192.168.43.231:5000';
-}
+const _API_URL = process.env.EXPO_PUBLIC_API_URL;
+const _WS_URL = process.env.EXPO_PUBLIC_WS_URL;
 
-function getWsUrl() {
-  try {
-    if (globalThis.location && globalThis.location.origin) {
-      const proto = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      return `${proto}//${globalThis.location.host}`;
-    }
-  } catch (e) { /* native 环境 */ }
-  return 'ws://192.168.43.231:5000';
-}
-
-export const API_BASE = `${getBaseUrl()}/api`;
-export const WS_URL = getWsUrl();
+export const API_BASE = _API_URL ? `${_API_URL}/api` : '/api';
+export const WS_URL = _WS_URL || (typeof window !== 'undefined'
+  ? `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}`
+  : 'ws://192.168.43.231:5000');
