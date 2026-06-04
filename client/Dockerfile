@@ -13,7 +13,8 @@ RUN npm config set registry https://registry.npmmirror.com && \
 # 复制源码
 COPY . .
 
-# 构建 Web 版本
+# 修复所有 bin 目录权限并构建 Web 版本
+RUN chmod -R +x node_modules/.bin/ 2>/dev/null || true
 RUN npx expo export --platform web
 
 # ============================================
