@@ -1,190 +1,233 @@
 // ============================================================
-// 登录过渡动画页面 — 纯 React Native Animated 实现
-// 不依赖 three.js / expo-gl（Expo Go 兼容）
-// 粒子爱心效果改为多圆圈缩放 + 彩色粒子 Animated 动画
+// 登录过渡动画页面 — Three.js 3D 立体爱心效果
+// Web平台：使用 iframe 加载动画页面
+// 原生平台：通过 WebView 加载（Expo Go 兼容）
 // ============================================================
-import React, { useEffect, useRef, useMemo } from 'react';
-import {
-  View, Text, StyleSheet, StatusBar, Animated, Dimensions,
-} from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { StyleSheet, Animated, Dimensions, Platform, View } from 'react-native';
+import { WebView } from 'react-native-webview';
 
 const { width: SW, height: SH } = Dimensions.get('window');
-const PARTICLE_COUNT = 36; // 圆形排列粒子数
-const ANIMATION_DURATION = 3200; // 总时长(ms)
-
-// 爱心曲线参数方程（用于计算粒子目标位置）
-function heartPoint(t, scale = 1) {
-  const x = 16 * Math.pow(Math.sin(t), 3);
-  const y = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
-  return { x: x * scale, y: y * scale };
-}
-
-const COLOR_PALETTE = [
-  '#FF477C', '#E82D9E', '#D940B3', '#C433E0', '#A62DF2',
-  '#FF5997', '#FB72BF', '#E04DD9', '#7C5CFC', '#FF3366',
-];
-
-function generateParticles() {
-  return Array.from({ length: PARTICLE_COUNT }, (_, i) => {
-    const t = (i / PARTICLE_COUNT) * Math.PI * 2;
-    const { x, y } = heartPoint(t, 7.5);
-    // 随机起始位置（屏幕外散开）
-    const angle = Math.random() * Math.PI * 2;
-    const dist = SW * 0.6 + Math.random() * SW * 0.3;
-    return {
-      id: i,
-      startX: Math.cos(angle) * dist,
-      startY: Math.sin(angle) * dist,
-      targetX: x,
-      targetY: y,
-      color: COLOR_PALETTE[i % COLOR_PALETTE.length],
-      size: 5 + Math.random() * 4,
-      delay: Math.random() * 400,
-    };
-  });
-}
-
-function Particle({ p, phase }) {
-  // phase: 0=汇聚 1=保持呼吸 2=散开
-  const anim = useRef(new Animated.Value(0)).current; // 0→1 汇聚进度
-  const breathe = useRef(new Animated.Value(1)).current;
-  const disperse = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    // 汇聚
-    Animated.sequence([
-      Animated.delay(p.delay),
-      Animated.parallel([
-        Animated.timing(anim, { toValue: 1, duration: 900, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-      ]),
-    ]).start();
-
-    // 呼吸
-    const breatheLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(breathe, { toValue: 1.06, duration: 600, useNativeDriver: true }),
-        Animated.timing(breathe, { toValue: 0.94, duration: 600, useNativeDriver: true }),
-      ])
-    );
-    const breatheTimer = setTimeout(() => breatheLoop.start(), p.delay + 950);
-
-    // 散开 + 消失
-    const disperseTimer = setTimeout(() => {
-      breatheLoop.stop();
-      Animated.parallel([
-        Animated.timing(disperse, { toValue: 1, duration: 700, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0, duration: 700, useNativeDriver: true }),
-      ]).start();
-    }, ANIMATION_DURATION - 800);
-
-    return () => {
-      clearTimeout(breatheTimer);
-      clearTimeout(disperseTimer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const translateX = Animated.add(
-    anim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [p.startX, p.targetX],
-    }),
-    disperse.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, p.startX * 0.8],
-    })
-  );
-
-  const translateY = Animated.add(
-    anim.interpolate({
-      inputRange: [0, 1],
-      outputRange: [p.startY, p.targetY],
-    }),
-    disperse.interpolate({
-      inputRange: [0, 1],
-      outputRange: [0, p.startY * 0.8],
-    })
-  );
-
-  return (
-    <Animated.View
-      style={[
-        styles.particle,
-        {
-          width: p.size,
-          height: p.size,
-          borderRadius: p.size / 2,
-          backgroundColor: p.color,
-          opacity,
-          transform: [
-            { translateX },
-            { translateY },
-            { scale: breathe },
-          ],
-        },
-      ]}
-    />
-  );
-}
 
 export default function TransitionScreen({ onDone }) {
-  const particles = useMemo(() => generateParticles(), []);
-
-  // 文字动画
-  const titleOpacity = useRef(new Animated.Value(0)).current;
-  const titleScale = useRef(new Animated.Value(0.5)).current;
-  const subtitleOpacity = useRef(new Animated.Value(0)).current;
   const screenOpacity = useRef(new Animated.Value(1)).current;
+  const doneRef = useRef(false);
+  const iframeRef = useRef(null);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
+  const handleDone = () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    Animated.timing(screenOpacity, {
+      toValue: 0,
+      duration: 600,
+      useNativeDriver: true,
+    }).start(() => {
+      if (onDoneRef.current) onDoneRef.current();
+    });
+  };
 
   useEffect(() => {
-    // 1s 后显示标题
-    setTimeout(() => {
-      Animated.parallel([
-        Animated.timing(titleOpacity, { toValue: 1, duration: 700, useNativeDriver: true }),
-        Animated.timing(titleScale, { toValue: 1, duration: 700, useNativeDriver: true }),
-      ]).start(() => {
-        Animated.timing(subtitleOpacity, { toValue: 0.75, duration: 500, useNativeDriver: true }).start();
-      });
-    }, 1000);
-
-    // 淡出
-    setTimeout(() => {
-      Animated.timing(screenOpacity, { toValue: 0, duration: 600, useNativeDriver: true }).start();
-    }, ANIMATION_DURATION - 650);
-
-    // 完成
-    const doneTimer = setTimeout(() => {
-      if (onDone) onDone();
-    }, ANIMATION_DURATION);
-
-    return () => clearTimeout(doneTimer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const fallback = setTimeout(handleDone, 5000);
+    return () => clearTimeout(fallback);
   }, []);
+
+  useEffect(() => {
+    const handleMessage = (e) => {
+      if (e.data === 'transition-done') {
+        handleDone();
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const onMessage = (e) => {
+    if (e.nativeEvent.data === 'done') handleDone();
+  };
+
+  const THREE_HTML = `
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>
+*{margin:0;padding:0}
+body{background:#0a0612;overflow:hidden;touch-action:none}
+canvas{display:block;position:absolute;top:0;left:0}
+#overlay{
+  position:absolute;top:0;left:0;right:0;bottom:0;
+  display:flex;flex-direction:column;justify-content:center;align-items:center;
+  pointer-events:none;z-index:10;padding-bottom:35%
+}
+#title{
+  font-size:52px;font-weight:800;color:#fff;letter-spacing:10px;
+  text-shadow:0 0 30px rgba(255,80,120,0.7),0 0 60px rgba(255,80,120,0.3);
+  opacity:0;transform:scale(0.5);
+  transition:opacity .8s cubic-bezier(.34,1.56,.64,1),transform .8s cubic-bezier(.34,1.56,.64,1)
+}
+#title.show{opacity:1;transform:scale(1)}
+#subtitle{
+  font-size:12px;color:rgba(255,255,255,.65);letter-spacing:4px;margin-top:16px;
+  opacity:0;transition:opacity .6s ease .1s
+}
+#subtitle.show{opacity:1}
+</style>
+</head>
+<body>
+<div id="overlay">
+  <div id="title">MeetU</div>
+  <div id="subtitle">瞬间相遇，记录社交瞬间</div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>if(typeof THREE==='undefined'){document.write('<script src="https://unpkg.com/three@0.128.0/build/three.min.js"><\\/script>')}</script>
+<script>
+(function(){
+  var W=window.innerWidth, H=window.innerHeight;
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(55, W/H, 0.1, 500);
+  camera.position.set(0, 1, 28);
+  camera.lookAt(0, 1, 0);
+  var renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x0a0612, 1);
+  document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+  var hs = new THREE.Shape();
+  hs.moveTo(5, 5);
+  hs.bezierCurveTo(5, 5, 4, 0, 0, 0);
+  hs.bezierCurveTo(-6, 0, -6, 7, -6, 7);
+  hs.bezierCurveTo(-6, 11, -3, 15.4, 5, 19);
+  hs.bezierCurveTo(12, 15.4, 16, 11, 16, 7);
+  hs.bezierCurveTo(16, 7, 16, 0, 10, 0);
+  hs.bezierCurveTo(7, 0, 5, 5, 5, 5);
+
+  var extConf = { depth: 4, bevelEnabled: true, bevelSegments: 8, steps: 2, bevelSize: 1.2, bevelThickness: 1.2 };
+  var heartGeo = new THREE.ExtrudeGeometry(hs, extConf);
+  heartGeo.center();
+
+  var heartMat = new THREE.MeshPhongMaterial({ color: 0xFF477C, emissive: 0xFF1744, emissiveIntensity: 0.15, shininess: 100, specular: 0xFFFFFF, side: THREE.DoubleSide });
+  var heart = new THREE.Mesh(heartGeo, heartMat);
+  heart.scale.set(0.001, 0.001, 0.001);
+  heart.rotation.z = Math.PI;
+  scene.add(heart);
+
+  var glowMat = new THREE.MeshBasicMaterial({ color: 0xFF477C, transparent: true, opacity: 0.08, side: THREE.DoubleSide });
+  var glowHeart = new THREE.Mesh(heartGeo, glowMat);
+  glowHeart.scale.set(0.001, 0.001, 0.001);
+  glowHeart.rotation.z = Math.PI;
+  scene.add(glowHeart);
+
+  var wireMat = new THREE.MeshBasicMaterial({ color: 0xFF6B9D, wireframe: true, transparent: true, opacity: 0.05 });
+  var wireHeart = new THREE.Mesh(heartGeo, wireMat);
+  wireHeart.scale.set(0.001, 0.001, 0.001);
+  wireHeart.rotation.z = Math.PI;
+  scene.add(wireHeart);
+
+  scene.add(new THREE.AmbientLight(0x404040, 0.6));
+  var l1 = new THREE.PointLight(0xFF477C, 2.5, 60); l1.position.set(12, 12, 12); scene.add(l1);
+  var l2 = new THREE.PointLight(0x7C5CFC, 1.8, 60); l2.position.set(-12, -6, 12); scene.add(l2);
+  var l3 = new THREE.PointLight(0xFF6B9D, 1.2, 60); l3.position.set(0, 12, -12); scene.add(l3);
+
+  var pCount = 2000;
+  var pGeo = new THREE.BufferGeometry();
+  var pPos = new Float32Array(pCount * 3);
+  var pCol = new Float32Array(pCount * 3);
+  for (var i = 0; i < pCount; i++) {
+    var theta = Math.random() * Math.PI * 2;
+    var phi = Math.acos(2 * Math.random() - 1);
+    var r = 7 + Math.random() * 15;
+    pPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
+    pPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta) + 1;
+    pPos[i*3+2] = r * Math.cos(phi);
+    var mix = Math.random();
+    pCol[i*3] = 1.0; pCol[i*3+1] = 0.28 + mix * 0.25; pCol[i*3+2] = 0.49 + mix * 0.5;
+  }
+  pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+
+  var pMat = new THREE.PointsMaterial({ size: 0.1, transparent: true, opacity: 0.65, vertexColors: true, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true });
+  var particles = new THREE.Points(pGeo, pMat);
+  scene.add(particles);
+
+  var startTime = Date.now();
+  var growDur = 1400;
+  var totalDur = 3500;
+  var targetScale = 0.5;
+
+  function easeOutElastic(t) {
+    return t <= 0 ? 0 : t >= 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t - 0.075) * (2 * Math.PI) / 0.3) + 1;
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+    var elapsed = Date.now() - startTime;
+    var t = elapsed * 0.001;
+    var s = elapsed < growDur ? easeOutElastic(elapsed / growDur) * targetScale : targetScale + Math.sin(t * 2.5) * 0.015;
+    s = Math.max(0.001, s);
+
+    heart.scale.set(s, s, s);
+    heart.rotation.y += 0.006;
+
+    var gs = s * 1.15;
+    glowHeart.scale.set(gs, gs, gs);
+    glowHeart.rotation.y = heart.rotation.y;
+
+    wireHeart.scale.set(s * 1.01, s * 1.01, s * 1.01);
+    wireHeart.rotation.y = heart.rotation.y;
+
+    particles.rotation.y -= 0.002;
+    particles.rotation.x += 0.0005;
+
+    renderer.render(scene, camera);
+
+    if (elapsed >= totalDur) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage('done');
+      } else if (window.parent && window.parent.postMessage) {
+        window.parent.postMessage('transition-done', '*');
+      }
+    }
+  }
+
+  animate();
+  setTimeout(function(){ document.getElementById('title').classList.add('show'); }, 1000);
+  setTimeout(function(){ document.getElementById('subtitle').classList.add('show'); }, 1700);
+  window.addEventListener('resize', function(){ W = window.innerWidth; H = window.innerHeight; camera.aspect = W / H; camera.updateProjectionMatrix(); renderer.setSize(W, H); });
+})();
+</script>
+</body>
+</html>
+`;
+
+  if (Platform.OS === 'web') {
+    return (
+      <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
+        <iframe
+          srcDoc={THREE_HTML}
+          style={{ width: '100%', height: '100%', border: 'none' }}
+          sandbox="allow-scripts allow-same-origin"
+        />
+      </Animated.View>
+    );
+  }
 
   return (
     <Animated.View style={[styles.container, { opacity: screenOpacity }]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0a0612" />
-
-      {/* 粒子层 */}
-      <View style={styles.particleWrap} pointerEvents="none">
-        {particles.map(p => (
-          <Particle key={p.id} p={p} />
-        ))}
-      </View>
-
-      {/* 文字层 */}
-      <View style={styles.textWrap} pointerEvents="none">
-        <Animated.Text
-          style={[styles.title, { opacity: titleOpacity, transform: [{ scale: titleScale }] }]}
-        >
-          MeetU
-        </Animated.Text>
-        <Animated.Text style={[styles.subtitle, { opacity: subtitleOpacity }]}>
-          瞬间相遇，记录社交瞬间
-        </Animated.Text>
-      </View>
+      <WebView
+        source={{ html: THREE_HTML }}
+        style={styles.webview}
+        onMessage={onMessage}
+        scrollEnabled={false}
+        bounces={false}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        originWhitelist={['*']}
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+      />
     </Animated.View>
   );
 }
@@ -198,38 +241,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#0a0612',
     zIndex: 999,
   },
-  particleWrap: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  particle: {
-    position: 'absolute',
-    shadowColor: '#FF477C',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  textWrap: {
+  webview: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 58,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 12,
-    textShadowColor: 'rgba(255, 80, 120, 0.7)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 28,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: 'rgba(255, 255, 255, 0.7)',
-    letterSpacing: 5,
-    marginTop: 20,
+    backgroundColor: '#0a0612',
   },
 });

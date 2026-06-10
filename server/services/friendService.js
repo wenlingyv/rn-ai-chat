@@ -1,8 +1,11 @@
 const pool = require('../database');
 
+// 辅助函数：宽松 ID 比较
+const idEq = (a, b) => Number(a) === Number(b);
+
 const sendFriendRequest = async (requesterId, addresseeId) => {
   try {
-    if (requesterId === addresseeId) {
+    if (idEq(requesterId, addresseeId)) {
       return { success: false, message: '不能添加自己为好友' };
     }
 
@@ -20,11 +23,11 @@ const sendFriendRequest = async (requesterId, addresseeId) => {
         return { success: false, message: '你们已经是好友了' };
       }
 
-      if (friendship.status === 'pending' && friendship.requester_id === requesterId) {
+      if (friendship.status === 'pending' && idEq(friendship.requester_id, requesterId)) {
         return { success: false, message: '已经发送过好友申请，请等待对方确认' };
       }
 
-      if (friendship.status === 'pending' && friendship.addressee_id === requesterId) {
+      if (friendship.status === 'pending' && idEq(friendship.addressee_id, requesterId)) {
         const client = await pool.connect();
         try {
           await client.query('BEGIN');
@@ -87,7 +90,7 @@ const acceptFriendRequest = async (friendshipId, userId) => {
 
     const friendship = result.rows[0];
 
-    if (friendship.addressee_id !== userId) {
+    if (!idEq(friendship.addressee_id, userId)) {
       return { success: false, message: '无权操作此好友申请' };
     }
 
@@ -119,7 +122,7 @@ const rejectFriendRequest = async (friendshipId, userId) => {
 
     const friendship = result.rows[0];
 
-    if (friendship.addressee_id !== userId) {
+    if (!idEq(friendship.addressee_id, userId)) {
       return { success: false, message: '无权操作此好友申请' };
     }
 
@@ -212,7 +215,7 @@ const deleteFriend = async (friendshipId, userId) => {
 
     const friendship = result.rows[0];
 
-    if (friendship.requester_id !== userId && friendship.addressee_id !== userId) {
+    if (!idEq(friendship.requester_id, userId) && !idEq(friendship.addressee_id, userId)) {
       return { success: false, message: '无权操作此好友关系' };
     }
 

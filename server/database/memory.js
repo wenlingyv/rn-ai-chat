@@ -2,21 +2,32 @@ const users = [];
 const userSessions = [];
 const friendships = [];
 const chatHistory = [];
-const privateMessages = [];
+const messages = [];
 
 let userIdCounter = 1;
 let sessionIdCounter = 1;
 let friendshipIdCounter = 1;
-let privateMessageIdCounter = 1;
+let messageIdCounter = 1;
 let chatHistoryIdCounter = 1;
 
-// 辅助函数：宽松 ID 比较（处理数字/字符串类型不一致）
-const idEq = (a, b) => Number(a) === Number(b);
+function ilikeMatch(str, pattern) {
+  if (!str || !pattern) return false;
+  // 将 SQL ILIKE 模式（%keyword%）转为正则
+  const regex = new RegExp(pattern.replace(/%/g, '.*'), 'i');
+  return regex.test(str);
+}
 
 class MemoryPool {
   query = async (sqlRaw, params) => {
     // 标准化 SQL：trim + lowercase + 合并空白
     const sql = sqlRaw.trim().toLowerCase().replace(/\s+/g, ' ');
+
+    // ---- 调试日志 ----
+    if (sql.includes('ilike') || sql.includes('search') || sql.includes('from users')) {
+      console.log(`📊 SQL匹配检查: includesFromUsers=${sql.includes('from users')}, includesIlike=${sql.includes('ilike')}, includesFriendships=${sql.includes('friendships')}`);
+      console.log(`📊 SQL前80字符: "${sql.slice(0, 80)}"`);
+      console.log(`📊 Params:`, params);
+    }
 
     // ---- 事务控制 ----
     if (sql === 'begin' || sql === 'commit' || sql === 'rollback') {
@@ -44,18 +55,20 @@ class MemoryPool {
       return { rows: [user] };
     }
 
-    // 搜索用户：ILIKE 模糊匹配 username 或 nickname
-    if (sql.includes('from users') && sql.includes('ilike') && !sql.includes('friendships') && !sql.includes('private_messages')) {
-      const keyword = params[0];
-      const currentUserId = params[params.length - 1];
+    // 搜索用户：ILIKE 模糊匹配 username 或 nickname（必须在 where id 之前匹配）
+    if (sql.includes('from users') && sql.includes('ilike') && !sql.includes('friendships')) {
+      const keyword = params[0]; // %keyword%
+      const currentUserId = params[params.length - 1]; // 最后一个参数是当前用户ID
       const term = keyword.replace(/%/g, '').toLowerCase();
+      console.log(`🔍 搜索用户: term="${term}", currentUserId=${currentUserId}, allUsers=${JSON.stringify(users.map(u=>u.username))}`);
       const result = users.filter(u =>
-        !idEq(u.id, currentUserId) &&
+        u.id !== currentUserId &&
         ((u.username && u.username.toLowerCase().includes(term)) ||
          (u.nickname && u.nickname.toLowerCase().includes(term)))
       ).map(u => ({ id: u.id, username: u.username, nickname: u.nickname, avatar: u.avatar }))
        .sort((a, b) => (a.username || '').localeCompare(b.username || ''))
        .slice(0, 20);
+      console.log(`🔍 搜索结果: 找到${result.length}个用户`);
       return { rows: result };
     }
 
@@ -65,19 +78,21 @@ class MemoryPool {
       return { rows: user ? [user] : [] };
     }
 
-    // 按 id 查询用户
+    // 按 id 查询用户（精确匹配 "where id = $1" 或 "where id = "）
     if (sql.includes('from users') && sql.includes('where id =') && !sql.includes('friendships') && !sql.includes('user_sessions') && !sql.includes('ilike')) {
-      const user = users.find(u => idEq(u.id, params[0]));
+      const user = users.find(u => u.id === params[0]);
       return { rows: user ? [user] : [] };
     }
 
     // 更新用户 profile
     if (sql.startsWith('update users set')) {
-      const user = users.find(u => idEq(u.id, params[params.length - 1]));
+      const user = users.find(u => u.id === params[params.length - 1]);
       if (user) {
+        // 简单处理：按参数更新 nickname/avatar
+        const sqlUpper = sql;
         let pIdx = 0;
-        if (sql.includes('nickname')) { user.nickname = params[pIdx++]; }
-        if (sql.includes('avatar')) { user.avatar = params[pIdx++]; }
+        if (sqlUpper.includes('nickname')) { user.nickname = params[pIdx++]; }
+        if (sqlUpper.includes('avatar')) { user.avatar = params[pIdx++]; }
         user.updated_at = new Date();
         return { rows: [{ id: user.id, username: user.username, nickname: user.nickname, avatar: user.avatar }] };
       }
@@ -103,16 +118,16 @@ class MemoryPool {
       return { rows: [session] };
     }
 
-    // session + user JOIN 查询
+    // session + user JOIN 查询（认证中间件使用）
     if (sql.includes('user_sessions') && sql.includes('session_id') && sql.includes('user_id') && sql.includes('join users')) {
       const session = userSessions.find(s =>
         s.session_id === params[0] &&
-        idEq(s.user_id, params[1]) &&
+        s.user_id === params[1] &&
         !s.is_revoked &&
         (!s.expires_at || new Date(s.expires_at) > new Date())
       );
       if (session) {
-        const user = users.find(u => idEq(u.id, session.user_id));
+        const user = users.find(u => u.id === session.user_id);
         if (user) {
           return { rows: [{ ...session, phone: user.phone, username: user.username, nickname: user.nickname }] };
         }
@@ -126,16 +141,16 @@ class MemoryPool {
       return { rows: session ? [session] : [] };
     }
 
-    // 按 session_id + user_id 查询 session
+    // 按 session_id + user_id 查询 session（refresh token 验证）
     if (sql.includes('user_sessions') && sql.includes('session_id') && sql.includes('user_id') && !sql.includes('join')) {
       const session = userSessions.find(s =>
         s.session_id === params[0] &&
-        idEq(s.user_id, params[1]) &&
+        s.user_id === params[1] &&
         !s.is_revoked &&
         (!s.expires_at || new Date(s.expires_at) > new Date())
       );
       if (session) {
-        const user = users.find(u => idEq(u.id, session.user_id));
+        const user = users.find(u => u.id === session.user_id);
         return { rows: [{ ...session, username: user ? user.username : null, nickname: user ? user.nickname : null }] };
       }
       return { rows: [] };
@@ -143,7 +158,7 @@ class MemoryPool {
 
     // 更新 last_used_at
     if (sql.includes('update user_sessions set last_used_at')) {
-      const session = userSessions.find(s => idEq(s.id, params[0]));
+      const session = userSessions.find(s => s.id === params[0]);
       if (session) session.last_used_at = new Date();
       return { rowCount: 1 };
     }
@@ -152,33 +167,20 @@ class MemoryPool {
     if (sql.includes('update user_sessions set is_revoked')) {
       if (sql.includes('user_id') && sql.includes('session_id')) {
         userSessions.forEach(s => {
-          if (idEq(s.user_id, params[0]) && s.session_id === params[1]) s.is_revoked = true;
+          if (s.user_id === params[0] && s.session_id === params[1]) s.is_revoked = true;
         });
       } else if (sql.includes('user_id')) {
         userSessions.forEach(s => {
-          if (idEq(s.user_id, params[0])) s.is_revoked = true;
+          if (s.user_id === params[0]) s.is_revoked = true;
         });
       } else if (sql.includes('session_id')) {
         userSessions.forEach(s => {
           if (s.session_id === params[0]) s.is_revoked = true;
         });
       } else {
-        const session = userSessions.find(s => idEq(s.id, params[0]));
+        const session = userSessions.find(s => s.id === params[0]);
         if (session) session.is_revoked = true;
       }
-      return { rowCount: 1 };
-    }
-
-    // 删除 session
-    if (sql.includes('delete') && sql.includes('user_sessions') && sql.includes('user_id')) {
-      const idx = userSessions.findIndex(s => idEq(s.user_id, params[0]));
-      if (idx > -1) userSessions.splice(idx, 1);
-      return { rowCount: 1 };
-    }
-
-    if (sql.includes('delete') && sql.includes('user_sessions') && sql.includes('session_id')) {
-      const idx = userSessions.findIndex(s => s.session_id === params[0]);
-      if (idx > -1) userSessions.splice(idx, 1);
       return { rowCount: 1 };
     }
 
@@ -197,14 +199,53 @@ class MemoryPool {
       return { rows: [friendship] };
     }
 
-    // 好友列表：JOIN users（必须在通用 friendships 查询之前匹配）
+    // 查询两个用户之间的好友关系
+    if (sql.includes('from friendships') && sql.includes('requester_id') && sql.includes('addressee_id') && !sql.includes('where id')) {
+      const rId = params[0];
+      const aId = params[1];
+      const result = friendships.filter(f =>
+        (f.requester_id === rId && f.addressee_id === aId) ||
+        (f.requester_id === aId && f.addressee_id === rId)
+      );
+      return { rows: result };
+    }
+
+    // 按 id 查询 friendship
+    if (sql.includes('from friendships') && sql.includes('where id') && !sql.includes('join')) {
+      const friendship = friendships.find(f => f.id === params[0]);
+      return { rows: friendship ? [friendship] : [] };
+    }
+
+    // 更新 friendship status
+    if (sql.includes('update friendships set status')) {
+      const friendship = friendships.find(f => f.id === params[params.length - 1]);
+      if (friendship) {
+        friendship.status = params[0];
+        friendship.updated_at = new Date();
+      }
+      return { rowCount: 1 };
+    }
+
+    // 更新 friendship requester/addressee/status（重新发送被拒绝的申请）
+    if (sql.includes('update friendships set requester_id') && sql.includes('addressee_id') && sql.includes('status')) {
+      const friendship = friendships.find(f => f.id === params[3]);
+      if (friendship) {
+        friendship.requester_id = params[0];
+        friendship.addressee_id = params[1];
+        friendship.status = params[2];
+        friendship.updated_at = new Date();
+      }
+      return { rowCount: 1 };
+    }
+
+    // 好友列表：JOIN users 查询已接受的好友
     if (sql.includes('from friendships') && sql.includes('join users') && sql.includes("status = 'accepted'")) {
       const userId = params[0];
       const result = friendships
-        .filter(f => f.status === 'accepted' && (idEq(f.requester_id, userId) || idEq(f.addressee_id, userId)))
+        .filter(f => f.status === 'accepted' && (f.requester_id === userId || f.addressee_id === userId))
         .map(f => {
-          const friendId = idEq(f.requester_id, userId) ? f.addressee_id : f.requester_id;
-          const user = users.find(u => idEq(u.id, friendId));
+          const friendId = f.requester_id === userId ? f.addressee_id : f.requester_id;
+          const user = users.find(u => u.id === friendId);
           if (!user) return null;
           return {
             friendship_id: f.id,
@@ -218,13 +259,13 @@ class MemoryPool {
       return { rows: result };
     }
 
-    // 待处理好友申请：JOIN users（必须在通用 friendships 查询之前匹配）
+    // 待处理好友申请：JOIN users
     if (sql.includes('from friendships') && sql.includes('join users') && sql.includes("status = 'pending'") && sql.includes('addressee_id')) {
       const userId = params[0];
       const result = friendships
-        .filter(f => f.status === 'pending' && idEq(f.addressee_id, userId))
+        .filter(f => f.status === 'pending' && f.addressee_id === userId)
         .map(f => {
-          const requester = users.find(u => idEq(u.id, f.requester_id));
+          const requester = users.find(u => u.id === f.requester_id);
           if (!requester) return null;
           return {
             friendship_id: f.id,
@@ -237,48 +278,6 @@ class MemoryPool {
         })
         .filter(Boolean);
       return { rows: result };
-    }
-
-    // 查询两个用户之间的好友关系（通用，放在 JOIN 查询之后）
-    if (sql.includes('from friendships') && sql.includes('requester_id') && sql.includes('addressee_id') && !sql.includes('where id') && !sql.includes('join users')) {
-      const rId = params[0];
-      const aId = params[1];
-      const result = friendships.filter(f =>
-        (idEq(f.requester_id, rId) && idEq(f.addressee_id, aId)) ||
-        (idEq(f.requester_id, aId) && idEq(f.addressee_id, rId))
-      );
-      return { rows: result };
-    }
-
-    // 按 id 查询 friendship
-    if (sql.includes('from friendships') && sql.includes('where id') && !sql.includes('join')) {
-      const friendship = friendships.find(f => idEq(f.id, params[0]));
-      return { rows: friendship ? [friendship] : [] };
-    }
-
-    // 更新 friendship status
-    if (sql.includes('update friendships set status')) {
-      const friendship = friendships.find(f => idEq(f.id, params[params.length - 1]));
-      // 从 SQL 中提取 status 值（可能是硬编码的 'accepted'/'rejected'/'pending'）
-      const statusMatch = sql.match(/status\s*=\s*'(\w+)'/);
-      const newStatus = statusMatch ? statusMatch[1] : params[0];
-      if (friendship) {
-        friendship.status = newStatus;
-        friendship.updated_at = new Date();
-      }
-      return { rowCount: 1 };
-    }
-
-    // 更新 friendship requester/addressee/status
-    if (sql.includes('update friendships set requester_id') && sql.includes('addressee_id') && sql.includes('status')) {
-      const friendship = friendships.find(f => idEq(f.id, params[3]));
-      if (friendship) {
-        friendship.requester_id = params[0];
-        friendship.addressee_id = params[1];
-        friendship.status = params[2];
-        friendship.updated_at = new Date();
-      }
-      return { rowCount: 1 };
     }
 
     // ==================== chat_history 表 ====================
@@ -298,95 +297,48 @@ class MemoryPool {
     if (sql.includes('from chat_history') && sql.includes('user_id') && sql.includes('order by')) {
       const userId = params[0];
       const result = chatHistory
-        .filter(h => idEq(h.user_id, userId))
+        .filter(h => h.user_id === userId)
         .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       return { rows: result };
     }
 
-    // ==================== private_messages 表 ====================
+    // ==================== messages 表 ====================
 
-    if (sql.startsWith('insert into private_messages')) {
-      const msg = {
-        id: privateMessageIdCounter++,
+    if (sql.startsWith('insert into messages')) {
+      const message = {
+        id: messageIdCounter++,
         sender_id: params[0],
         receiver_id: params[1],
         content: params[2],
-        is_read: false,
+        type: params[3] || 'text',
+        status: params[4] || 'sent',
         created_at: new Date()
       };
-      privateMessages.push(msg);
-      return { rows: [msg] };
+      messages.push(message);
+      return { rows: [message] };
     }
 
-    // 查询两个用户之间的聊天记录（带 LIMIT OFFSET）
-    if (sql.includes('from private_messages') && sql.includes('sender_id') && sql.includes('receiver_id') && sql.includes('order by')) {
-      const u1 = params[0];
-      const u2 = params[1];
-      const limit = params[2] || 50;
-      const offset = params[3] || 0;
-      const result = privateMessages
-        .filter(m =>
-          (idEq(m.sender_id, u1) && idEq(m.receiver_id, u2)) ||
-          (idEq(m.sender_id, u2) && idEq(m.receiver_id, u1))
-        )
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    if (sql.includes('from messages') && sql.includes('sender_id') && sql.includes('receiver_id')) {
+      const result = messages.filter(m =>
+        (m.sender_id === params[0] && m.receiver_id === params[1]) ||
+        (m.sender_id === params[1] && m.receiver_id === params[0])
+      ).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
       return { rows: result };
     }
 
-    // 查询两个用户之间的最后一条消息
-    if (sql.includes('from private_messages') && sql.includes('sender_id') && sql.includes('receiver_id') && sql.includes('limit 1')) {
-      const u1 = params[0];
-      const u2 = params[1];
-      const result = privateMessages
-        .filter(m =>
-          (idEq(m.sender_id, u1) && idEq(m.receiver_id, u2)) ||
-          (idEq(m.sender_id, u2) && idEq(m.receiver_id, u1))
-        )
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-      return { rows: result.slice(0, 1) };
-    }
-
-    // 标记消息已读
-    if (sql.includes('update private_messages set is_read')) {
-      const senderId = params[0];
-      const receiverId = params[1];
-      privateMessages.forEach(m => {
-        if (idEq(m.sender_id, senderId) && idEq(m.receiver_id, receiverId) && !m.is_read) {
-          m.is_read = true;
-        }
-      });
+    if (sql.startsWith('update messages set status')) {
+      const idx = messages.findIndex(m => m.id === params[0]);
+      if (idx > -1) {
+        messages[idx].status = params[1];
+        messages[idx].updated_at = new Date();
+      }
       return { rowCount: 1 };
     }
 
-    // WebSocket 中的 is_read 更新（is_read = true 硬编码）
-    if (sql.includes('update private_messages') && sql.includes('is_read = true')) {
-      const senderId = params[0];
-      const receiverId = params[1];
-      privateMessages.forEach(m => {
-        if (idEq(m.sender_id, senderId) && idEq(m.receiver_id, receiverId) && !m.is_read) {
-          m.is_read = true;
-        }
-      });
-      return { rowCount: 1 };
-    }
-
-    // 未读消息数（按好友）
-    if (sql.includes('from private_messages') && sql.includes('count') && sql.includes('sender_id') && sql.includes('receiver_id') && sql.includes('is_read')) {
-      const senderId = params[0];
-      const receiverId = params[1];
-      const count = privateMessages.filter(m =>
-        idEq(m.sender_id, senderId) && idEq(m.receiver_id, receiverId) && !m.is_read
-      ).length;
-      return { rows: [{ unread_count: count }] };
-    }
-
-    // 未读消息总数
-    if (sql.includes('from private_messages') && sql.includes('count') && sql.includes('receiver_id') && sql.includes('is_read') && !sql.includes('sender_id')) {
-      const receiverId = params[0];
-      const count = privateMessages.filter(m =>
-        idEq(m.receiver_id, receiverId) && !m.is_read
-      ).length;
-      return { rows: [{ unread_count: count }] };
+    // 消息会话列表
+    if (sql.includes('from messages') && sql.includes('conversations')) {
+      // 简单返回所有消息
+      return { rows: messages };
     }
 
     // ==================== 通用 ====================
@@ -395,7 +347,7 @@ class MemoryPool {
       let count = 0;
       if (sql.includes('users')) count = users.length;
       else if (sql.includes('friendships')) count = friendships.length;
-      else if (sql.includes('private_messages')) count = privateMessages.length;
+      else if (sql.includes('messages')) count = messages.length;
       return { rows: [{ count }] };
     }
 

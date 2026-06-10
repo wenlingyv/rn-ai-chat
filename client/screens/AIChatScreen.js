@@ -32,6 +32,7 @@ export default function AIChatScreen({ navigation }) {
   const [collapsedSections, setCollapsedSections] = useState({});
 
   const [selectedImage, setSelectedImage] = useState(null);
+  const abortControllerRef = useRef(null);
 
   const clearChat = async () => {
     try {
@@ -87,6 +88,14 @@ export default function AIChatScreen({ navigation }) {
     setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const stopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+  };
+
   const sendMessage = async () => {
     if ((!input.trim() && !selectedImage) || loading) return;
 
@@ -121,44 +130,100 @@ export default function AIChatScreen({ navigation }) {
         body.imageType = 'image/jpeg';
       }
 
-      const res = await fetch(API_URL, {
+      // SSE流式接收
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: abortController.signal,
       });
 
-      const data = await res.json();
-      const fullText = data.reply || '';
-      const thinkingText = data.thinking || '';
-      const searchSources = data.searchSources || [];
-      let currentText = '';
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
-      setMessages(prev =>
-        prev.map((msg, idx) =>
-          idx === prev.length - 1
-            ? { ...msg, thinking: thinkingText, searchSources }
-            : msg
-        )
-      );
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-      for (let i = 0; i < fullText.length; i++) {
-        currentText += fullText[i];
-        setMessages(prev =>
-          prev.map((msg, idx) =>
-            idx === prev.length - 1 ? { ...msg, content: currentText } : msg
-          )
-        );
-        await new Promise(resolve => setTimeout(resolve, 15));
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (!data) continue;
+
+          try {
+            const event = JSON.parse(data);
+            switch (event.type) {
+              case 'token':
+                setMessages(prev =>
+                  prev.map((msg, idx) =>
+                    idx === prev.length - 1
+                      ? { ...msg, content: (msg.content || '') + event.content }
+                      : msg
+                  )
+                );
+                break;
+              case 'thinking':
+                setMessages(prev =>
+                  prev.map((msg, idx) =>
+                    idx === prev.length - 1
+                      ? { ...msg, thinking: (msg.thinking || '') + event.content }
+                      : msg
+                  )
+                );
+                break;
+              case 'sources':
+                setMessages(prev =>
+                  prev.map((msg, idx) =>
+                    idx === prev.length - 1
+                      ? { ...msg, searchSources: event.data }
+                      : msg
+                  )
+                );
+                break;
+              case 'done':
+                // 流式结束
+                break;
+              case 'error':
+                setMessages(prev =>
+                  prev.map((msg, idx) =>
+                    idx === prev.length - 1
+                      ? { ...msg, content: event.content }
+                      : msg
+                  )
+                );
+                break;
+            }
+          } catch (parseErr) {
+            // JSON解析失败，忽略
+          }
+        }
       }
     } catch (e) {
-      console.log('API错误详情:', e.message, e);
-      setMessages(prev =>
-        prev.map((msg, idx) =>
-          idx === prev.length - 1 ? { ...msg, content: t('common.networkError') + e.message } : msg
-        )
-      );
+      if (e.name === 'AbortError') {
+        // 用户主动停止，不显示错误
+      } else {
+        console.log('API错误详情:', e.message, e);
+        setMessages(prev =>
+          prev.map((msg, idx) =>
+            idx === prev.length - 1 ? { ...msg, content: t('common.networkError') + e.message } : msg
+          )
+        );
+      }
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -366,8 +431,8 @@ export default function AIChatScreen({ navigation }) {
               onSubmitEditing={sendMessage}
               returnKeyType="send"
             />
-            <TouchableOpacity style={[styles.sendBtn, { backgroundColor: colors.primary }]} onPress={sendMessage} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" size={18} /> : <Text style={styles.sendText}>{t('common.send')}</Text>}
+            <TouchableOpacity style={[styles.sendBtn, { backgroundColor: loading ? '#FF3B30' : colors.primary }]} onPress={loading ? stopGeneration : sendMessage}>
+              {loading ? <Text style={styles.sendText}>■</Text> : <Text style={styles.sendText}>{t('common.send')}</Text>}
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>

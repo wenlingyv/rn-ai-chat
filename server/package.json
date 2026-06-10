@@ -8,6 +8,7 @@
     "@langchain/community": "^0.3.59",
     "@langchain/core": "^0.3.80",
     "@langchain/deepseek": "^0.1.0",
+    "@langchain/openai": "^0.6.17",
     "axios": "^1.16.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",

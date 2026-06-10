@@ -1,6 +1,5 @@
-// API 配置 — 同源部署，直接使用相对路径
-export const API_BASE = '/api';
+// API 配置 — 开发环境指向本地后端
+export const API_BASE = 'http://127.0.0.1:5000/api';
 
-// 根据页面协议自动选择 ws/wss，兼容 HTTPS 部署
-const WS_PROTOCOL = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-export const WS_URL = `${WS_PROTOCOL}//${window.location.host}`;
+// WebSocket 配置
+export const WS_URL = 'ws://127.0.0.1:5000';

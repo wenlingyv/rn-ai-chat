@@ -13,6 +13,11 @@ const friendRoutes = require('./routes/friend');
 const messageRoutes = require('./routes/message');
 const { initWebSocket, sendToUser, setRealtimeHandler } = require('./websocket');
 
+// -------------------- LangChain + SSE 流式输出 --------------------
+const { ChatOpenAI } = require('@langchain/openai');
+const { ChatDeepSeek } = require('@langchain/deepseek');
+const { HumanMessage, SystemMessage, AIMessage } = require('@langchain/core/messages');
+
 // -------------------- RAG 真正语义检索（Windows 100% 可用） --------------------
 const { RecursiveCharacterTextSplitter } = require('langchain/text_splitter');
 const { MemoryVectorStore } = require('langchain/vectorstores/memory');
@@ -50,19 +55,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// -------------------- 数据库（统一使用database/index.js的连接池） --------------------
+// -------------------- 数据库（内存模式，无需PostgreSQL） --------------------
 const pool = require('./database');
 
-// 初始化数据库
+// 初始化数据库（内存模式无需迁移）
 async function initDB() {
-  try {
-    // 运行数据库迁移
-    const { migrate } = require('./database/migrate');
-    await migrate();
-    console.log("✅ 数据表初始化完成");
-  } catch (error) {
-    console.error("❌ 建表失败：", error);
-  }
+  console.log("✅ 使用内存数据库，无需迁移");
 }
 
 // API路由
@@ -182,14 +180,123 @@ async function saveMessage(userId, role, content) {
   } catch (e) {}
 }
 
-// -------------------- 主聊天接口（已集成 RAG） --------------------
+// -------------------- 输入校验（防注入 + 长度限制） --------------------
+const MAX_MESSAGE_LENGTH = 5000;
+const DANGEROUS_PATTERNS = [
+  /<script\b/i,
+  /javascript\s*:/i,
+  /on\w+\s*=/i,       // onclick=, onerror= 等
+  /data\s*:\s*text\/html/i,
+];
+
+function validateInput(message) {
+  if (!message) return { valid: true };
+
+  // 长度限制
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    return { valid: false, error: `消息过长，最多${MAX_MESSAGE_LENGTH}字` };
+  }
+
+  // 危险内容检测
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(message)) {
+      return { valid: false, error: "消息包含不安全内容" };
+    }
+  }
+
+  return { valid: true };
+}
+
+// -------------------- 速率限制（内存滑动窗口，零依赖） --------------------
+const rateLimitMap = new Map(); // key: userId, value: { timestamps: [] }
+const RATE_LIMIT_WINDOW = 15 * 60 * 1000; // 15分钟窗口
+const RATE_LIMIT_MAX = 30; // 每窗口最多30次请求
+
+function checkRateLimit(userId) {
+  const now = Date.now();
+  const record = rateLimitMap.get(userId) || { timestamps: [] };
+
+  // 清理过期记录
+  record.timestamps = record.timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
+
+  if (record.timestamps.length >= RATE_LIMIT_MAX) {
+    return false; // 超限
+  }
+
+  record.timestamps.push(now);
+  rateLimitMap.set(userId, record);
+  return true;
+}
+
+// 定期清理过期记录（每5分钟）
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, record] of rateLimitMap) {
+    record.timestamps = record.timestamps.filter(t => now - t < RATE_LIMIT_WINDOW);
+    if (record.timestamps.length === 0) rateLimitMap.delete(key);
+  }
+}, 5 * 60 * 1000);
+
+// -------------------- Token 截断（防止超 context 崩溃） --------------------
+const MAX_CONTEXT_TOKENS = 12000; // 预留 8000 给模型响应
+
+function estimateTokens(messages) {
+  // 粗略估算：中文约1.5字/token，英文约4字符/token，取中间值
+  return messages.reduce((sum, msg) => {
+    const text = typeof msg.content === 'string'
+      ? msg.content
+      : Array.isArray(msg.content)
+        ? msg.content.map(c => c.text || '').join('')
+        : '';
+    return sum + Math.ceil(text.length / 3);
+  }, 0);
+}
+
+function truncateMessages(systemMsg, historyMsgs, currentMsg) {
+  // 优先保留：system + 当前消息 + 尽量多的历史
+  const core = [systemMsg, currentMsg];
+  const coreTokens = estimateTokens(core);
+  const budget = MAX_CONTEXT_TOKENS - coreTokens;
+
+  if (budget <= 0) return core; // 连核心都超了，只发核心
+
+  // 从最新历史往前加，直到预算用完
+  const result = [systemMsg];
+  let used = 0;
+  for (let i = historyMsgs.length - 1; i >= 0; i--) {
+    const msgTokens = estimateTokens([historyMsgs[i]]);
+    if (used + msgTokens > budget) break;
+    result.splice(1, 0, historyMsgs[i]); // 插到system后面
+    used += msgTokens;
+  }
+  result.push(currentMsg);
+  return result;
+}
+
+// -------------------- 主聊天接口（LangChain + SSE 流式输出） --------------------
 app.post('/api/chat', require('./middleware/auth').optionalAuth, async (req, res) => {
   try {
     const user = req.user;
     const { message, model = "deepseek-chat", role = "normal", webSearch = false, image, imageType } = req.body;
 
     const userId = user ? user.id : "default";
-    if (!message && !image) return res.json({ reply: "消息不能为空" });
+    if (!message && !image) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.json({ reply: "消息不能为空" });
+    }
+
+    // 速率限制检查
+    if (!checkRateLimit(userId)) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(429).json({ reply: "请求过于频繁，请稍后再试", code: "RATE_LIMITED" });
+    }
+
+    // 输入校验
+    const validation = validateInput(message);
+    if (!validation.valid) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      return res.status(400).json({ reply: validation.error, code: "INVALID_INPUT" });
+    }
 
     const history = await getHistory(userId);
     const isReason = model === "deepseek-reasoner";
@@ -212,60 +319,113 @@ app.post('/api/chat', require('./middleware/auth').optionalAuth, async (req, res
       systemPrompt += `\n\n【本地知识库】请根据以下资料回答：\n${ragContext}`;
     }
 
-    let userContent = image
-      ? [
-          { type: "image_url", image_url: { url: `data:${imageType||'image/jpeg'};base64,${image}` } },
-          { type: "text", text: message || "请描述这张图片" }
-        ]
-      : message;
-
-    const messages = [
-      { role: "system", content: systemPrompt },
-      ...history,
-      { role: "user", content: userContent }
-    ];
-
-    const result = await axios.post(
-      "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
-      {
-        model: isReason ? "mimo-v2.5-pro" : "mimo-v2.5",
-        messages,
-        temperature: isReason ? 0.1 : role === "angry" ? 1.3 : 0.7,
-      },
-      {
-        headers: {
-          "Authorization": `Bearer ${MIMO_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
+    // 构建LangChain消息列表（带Token截断）
+    const systemMsg = new SystemMessage(systemPrompt);
+    const historyMsgs = history.map(h =>
+      h.role === 'user' ? new HumanMessage(h.content) : new AIMessage(h.content)
     );
 
-    const choice = result.data.choices[0];
-    let reply = choice?.message?.content?.trim() || "无回复";
-    let thinking = "";
+    // 构造用户消息（支持多模态）
+    const currentUserMsg = image
+      ? new HumanMessage({
+          content: [
+            { type: "image_url", image_url: { url: `data:${imageType||'image/jpeg'};base64,${image}` } },
+            { type: "text", text: message || "请描述这张图片" },
+          ],
+        })
+      : new HumanMessage(message);
 
-    if (isReason) {
-      thinking = choice?.message?.reasoning_content?.trim() || "";
-      if (!thinking) {
-        const thinkMatch = reply.match(/【思考过程】([\s\S]*?)【最终回答】/);
-        const ansMatch = reply.match(/【最终回答】([\s\S]*)/);
-        if (thinkMatch) {
-          thinking = thinkMatch[1].trim();
-          if (ansMatch) reply = ansMatch[1].trim();
+    // 截断历史，确保不超 context
+    const lcMessages = truncateMessages(systemMsg, historyMsgs, currentUserMsg);
+
+    // 创建DeepSeek实例（streaming模式）
+    const chatModel = new ChatDeepSeek({
+      modelName: isReason ? "deepseek-reasoner" : "deepseek-chat",
+      temperature: isReason ? 0.1 : role === "angry" ? 1.3 : 0.7,
+      streaming: true,
+      apiKey: process.env.DEEPSEEK_API_KEY,
+    });
+
+    // 设置SSE响应头
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    // 请求超时控制：60秒无响应自动断开
+    const timeoutMs = 60000;
+    const timeoutId = setTimeout(() => {
+      if (!res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ type: "error", content: "请求超时，请稍后重试" })}\n\n`);
+        res.end();
+      }
+    }, timeoutMs);
+
+    // 推送搜索来源（如果有）
+    if (searchSources.length > 0) {
+      res.write(`data: ${JSON.stringify({ type: "sources", data: searchSources })}\n\n`);
+    }
+
+    let fullReply = '';
+    let fullThinking = '';
+
+    // 流式调用LLM
+    const stream = await chatModel.stream(lcMessages);
+
+    for await (const chunk of stream) {
+      // 收到第一个chunk就清除超时
+      clearTimeout(timeoutId);
+      // 检查客户端是否断开
+      if (res.writableEnded || res.destroyed) break;
+
+      const content = chunk.content || '';
+
+      // 检查是否有思考过程（MIMO reasoning_content）
+      if (chunk.additional_kwargs?.reasoning_content) {
+        fullThinking += chunk.additional_kwargs.reasoning_content;
+        res.write(`data: ${JSON.stringify({ type: "thinking", content: chunk.additional_kwargs.reasoning_content })}\n\n`);
+      }
+
+      if (content) {
+        fullReply += content;
+        res.write(`data: ${JSON.stringify({ type: "token", content })}\n\n`);
+      }
+    }
+
+    // 深度思考模式：如果流式中没有收到reasoning_content，尝试从回复中正则提取
+    if (isReason && !fullThinking) {
+      const thinkMatch = fullReply.match(/【思考过程】([\s\S]*?)【最终回答】/);
+      const ansMatch = fullReply.match(/【最终回答】([\s\S]*)/);
+      if (thinkMatch) {
+        fullThinking = thinkMatch[1].trim();
+        // 推送思考过程
+        res.write(`data: ${JSON.stringify({ type: "thinking", content: fullThinking })}\n\n`);
+        if (ansMatch) {
+          fullReply = ansMatch[1].trim();
         }
       }
     }
 
-    await saveMessage(userId, "user", message);
-    await saveMessage(userId, "assistant", reply);
+    // 保存消息到数据库
+    await saveMessage(userId, "user", message || "请描述这张图片");
+    await saveMessage(userId, "assistant", fullReply);
 
-    const response = { reply };
-    if (thinking) response.thinking = thinking;
-    if (searchSources.length > 0) response.searchSources = searchSources;
-    res.json(response);
+    // 发送结束事件
+    clearTimeout(timeoutId);
+    res.write(`data: ${JSON.stringify({ type: "done", reply: fullReply, thinking: fullThinking || undefined })}\n\n`);
+    res.end();
   } catch (err) {
     console.error("❌ 服务异常：", err.response?.data || err.message);
-    res.json({ reply: "服务异常，请稍后重试" });
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.json({ reply: "服务异常，请稍后重试" });
+    } else {
+      // SSE已开始，通过事件发送错误
+      try {
+        res.write(`data: ${JSON.stringify({ type: "error", content: "服务异常，请稍后重试" })}\n\n`);
+        res.end();
+      } catch (e) {}
+    }
   }
 });
 

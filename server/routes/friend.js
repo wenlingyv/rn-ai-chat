@@ -2,6 +2,7 @@ const express = require('express');
 const { authenticateToken } = require('../middleware/auth');
 const friendService = require('../services/friendService');
 const { sendToUser } = require('../websocket');
+const pool = require('../database');
 
 const router = express.Router();
 
@@ -32,8 +33,20 @@ router.put('/accept/:id', async (req, res) => {
     const friendshipId = parseInt(req.params.id);
     const result = await friendService.acceptFriendRequest(friendshipId, req.user.id);
     if (result.success) {
-      const pendingResult = await friendService.getPendingRequests(req.user.id);
-      const friendship = pendingResult.data ? null : null;
+      // 通知申请者好友请求已被接受
+      const friendshipResult = await pool.query(
+        `SELECT requester_id, addressee_id FROM friendships WHERE id = $1`,
+        [friendshipId]
+      );
+      if (friendshipResult.rows.length > 0) {
+        const friendship = friendshipResult.rows[0];
+        const requesterId = String(friendship.requester_id);
+        sendToUser(requesterId, {
+          type: 'friend_accepted',
+          fromUserId: req.user.id
+        });
+      }
+      // 通知接受者刷新列表
       sendToUser(String(req.user.id), {
         type: 'friend_accepted'
       });

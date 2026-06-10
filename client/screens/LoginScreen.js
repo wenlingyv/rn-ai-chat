@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView,
   ActivityIndicator, Modal, StatusBar
@@ -22,6 +22,12 @@ const LoginScreen = ({ navigation, route }) => {
   const [msgModalVisible, setMsgModalVisible] = useState(false);
   const [msgTitle, setMsgTitle] = useState('');
   const [msgContent, setMsgContent] = useState('');
+
+  // 用 ref 保持最新值，避免 onDone 闭包过期
+  const pendingAuthDataRef = useRef(pendingAuthData);
+  pendingAuthDataRef.current = pendingAuthData;
+  const authLoginRef = useRef(authLogin);
+  authLoginRef.current = authLogin;
 
   useEffect(() => {
     if (route.params?.isLogin !== undefined) {
@@ -107,12 +113,20 @@ const LoginScreen = ({ navigation, route }) => {
 
   if (showTransition) {
     return (
-      <TransitionScreen onDone={() => {
-        if (pendingAuthData) {
-          authLogin(pendingAuthData);
-          setPendingAuthData(null);
+      <TransitionScreen onDone={async () => {
+        const authData = pendingAuthDataRef.current;
+        if (authData) {
+          try {
+            await authLoginRef.current(authData);
+            setPendingAuthData(null);
+          } catch (e) {
+            console.error('Auth login error:', e);
+            setPendingAuthData(null);
+            setShowTransition(false);
+          }
+        } else {
+          setShowTransition(false);
         }
-        setShowTransition(false);
       }} />
     );
   }
